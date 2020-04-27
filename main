@@ -1,0 +1,118 @@
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+import re
+from sklearn.model_selection import KFold
+import keras
+from keras.models import Sequential
+from keras.layers import Dense, Activation
+from keras import backend as K
+from sklearn.metrics import mean_absolute_error
+from keras import metrics
+from keras import losses
+import matplotlib.pyplot as plt
+from keras.callbacks import callbacks as kb
+from sklearn.linear_model import Lasso
+from sklearn.linear_model import LassoCV
+from sklearn.datasets import make_regression
+from sklearn.linear_model import MultiTaskLassoCV
+from sklearn.metrics import r2_score
+
+
+df = pd.read_csv('u.data', delimiter='\t', names=["user id", "item id", "rating", "timestamp"])
+
+# A1a
+# centering
+for i in range(0, 944):
+    ene = df.loc[df['user id'] == i]
+    c = ene.iloc[:, 2:3].mean(axis=0).values
+    df.at[df['user id'] == i, 'rating'] = df['rating'] - c
+
+# Kanoume sort me vasi to rating gia na vroumr to neo evros timwn tou rating
+evros = df.sort_values('rating')
+print(evros)
+
+# A1b
+# kanoume pivot ton pivot ton pinaka me times ta rating, item id ws rows kai user id ws columns,
+# simplirwnoume tis times Nan me 0
+# den xreiazomaste to timestamp
+df = pd.pivot_table(df, values='rating', index='item id', columns='user id', fill_value=0)
+
+# A1c
+# vazoume ta values apo 0 mexri 1, me vasi ta columns diladi ton user id (gia afto valame to user id sta columns)
+scaler = MinMaxScaler()
+scaler.fit(df)
+norm_df = pd.DataFrame(scaler.transform(df), index=df.index, columns=df.columns)
+# one-hot encoding
+X = pd.get_dummies(norm_df.columns)
+
+# thetoume to input kai to output enw ta kanoume kaia array
+# episis allazoume ton pinaka wste oi user id na einai sta rows kai to item id sta columns
+X = np.array(X)
+norm_df = norm_df.T
+Y = np.array(norm_df)
+
+
+# A1d
+kfold = KFold(n_splits=5, shuffle=True)
+rmseList = []
+rmaeList = []
+
+for i, (train, test) in enumerate(kfold.split(X)):
+    # Ftiaxnoume to montelo
+    model = Sequential()
+
+    model.add(Dense(30, activation="relu", input_dim=943))         # allaza tin timi 30 se (10, 20, 30)
+    model.add(Dense(20, activation="relu", input_dim=30))          # prostethike sto proairetiko erwtima
+    model.add(Dense(10, activation="relu", input_dim=2))           # prosthetike sto proairetiko erwtima
+    model.add(Dense(1682, activation="linear", input_dim=10))
+
+    def rmse(y_true, y_pred):
+        return K.sqrt(K.mean(K.square(y_pred - y_true)))
+
+
+    def mae(y_true, y_pred):
+        return K.mean(y_pred - y_true)
+
+
+    # kanoume compile gia rmse
+    keras.optimizers.SGD(lr=0.01, momentum=0.2, decay=0.0, nesterov=False)
+    # otan thelame to mae oi parakatw grammes ginontousan comment(tha to simvolisw me ^ gia na katalavete gia poie milaw)
+    model.compile(loss='mean_squared_error', optimizer='sgd', metrics=[rmse])  # ^
+    # to callback den xrisomopoiithike se ola ta erwtimata
+    monitor = kb.EarlyStopping(monitor='loss', min_delta=0.0001, patience=0, verbose=0, mode='auto', baseline=None,restore_best_weights=True)  # ^
+
+    # Fit model
+    history1 = model.fit(X[train], Y[train], epochs=320, batch_size=10, verbose=2, callbacks=[monitor])  # ^
+
+    # Evaluate model
+    scoresmse = model.evaluate(X[test], Y[test], verbose=2) # ^
+    rmseList.append(scoresmse[0])
+    print("Fold :", i, " RMSE:", scoresmse[0])
+
+    # kanoume compile gia mae
+    # otan thelame to rmse oi parakatw grammes ginontousan comment(tha to simvolisw me % gia na katalavete gia poie milaw)
+
+    # model.compile(loss='mean_absolute_error', optimizer='sgd', metrics=[mae])  # %
+    #
+    # monitor = kb.EarlyStopping(monitor='loss', min_delta=0.0001, patience=0, verbose=0, mode='auto', baseline=None,
+    #                            restore_best_weights=True)  # %
+
+    # history2 = model.fit(X[train], Y[train], epochs=320, batch_size=10, verbose=2, callbacks=[monitor]) # %
+
+    # Evaluate model
+    # scoresmae = model.evaluate(X[test], Y[test], verbose=2)  # %
+
+    # rmaeList.append(scoresmae[0])  # %
+    # print("Fold :", i, " MAE:", scoresmae[0])  # %
+
+# Graphikes parastaseis
+print("RMSE: ", np.mean(rmseList))  #  ^
+# print("MAE: ", np.mean(rmaeList))  # %
+plt.plot(history1.history['loss'], label='RMSE') # ^
+# plt.plot(history2.history['loss'], label='MAE')  # %
+plt.title('Model error (3 epipeda hidden layers)')  # o titlos allaza me vasi to erwtima
+plt.xlabel('Epoch')
+plt.ylabel('Error')
+plt.legend()
+plt.show()
